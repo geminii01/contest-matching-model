@@ -40,8 +40,6 @@ text_copy = text.copy()
 statis_copy = statis.copy()
 customs_copy = customs.copy()
 
-print('> 데이터 로드 완료')
-
 def zero_input(num, x):
     if pd.isna(x):
         return np.nan
@@ -134,4 +132,85 @@ print('> csv to jsonl 완료')
 
 
 # Document 구성
+
 # text data
+file_path = '../data/jsonl_prepro_text.jsonl'
+
+loader = JSONLoader(
+    file_path=file_path,
+    jq_schema='.',
+    text_content=False,
+    json_lines=True,
+)
+temp = loader.load()
+
+seq_num = 1
+text_documents = []
+for tmp in temp:
+    data = json.loads(tmp.page_content)
+    doc = Document(
+        page_content=data['DSC'], 
+        metadata={
+            'ID': data['ID'],
+            'CODE': data['CODE'],
+            'source': '/root/contest-matching-model/data/jsonl_prepro_text.jsonl',
+            'seq_num': seq_num,
+        }
+    )
+    text_documents.append(doc)
+    seq_num += 1
+
+# statis data
+file_path = '../data/jsonl_prepro_statis.jsonl'
+
+loader = JSONLoader(
+    file_path=file_path,
+    jq_schema='.',
+    text_content=False,
+    json_lines=True,
+)
+temp = loader.load()
+
+seq_num = 1
+statis_documents = []
+for tmp in temp:
+    data = json.loads(tmp.page_content)
+    doc = Document(
+        page_content=f"{data['ISIC4_NAME']}\r\n{data['KSIC10_NAME']}\r\n{data['HS2017_NAME']}", # ISIC4, KSIC10, HS2017 순으로 작성됨
+        metadata={
+            'ISIC4_CODE': data['ISIC4_CODE'],
+            'KSIC10_CODE': data['KSIC10_CODE'],
+            'HS2017_CODE': data['HS2017_CODE'],
+            'source': '/root/contest-matching-model/data/jsonl_prepro_statis.jsonl',
+            'seq_num': seq_num,
+        }
+    )
+    statis_documents.append(doc)
+    seq_num += 1
+
+# customs
+file_path = '../data/jsonl_prepro_customs.jsonl'
+
+loader = JSONLoader(
+    file_path=file_path,
+    jq_schema='.',
+    text_content=False,
+    json_lines=True,
+)
+temp = loader.load()
+
+seq_num = 1
+customs_documents = []
+for tmp in temp:
+    data = json.loads(tmp.page_content)
+    doc = Document(
+        page_content=f"{data['KOR_NAME']}\r\n{data['ENG_NAME']}\r\n{data['INT_NAME']}", # 한글품목명, 영어품목명, 성질 통합 분류명 순으로 작성됨
+        metadata={
+            'HS_CODE': data['HS_CODE'],
+            'INT_CODE': data['INT_CODE'],
+            'source': '/root/contest-matching-model/data/jsonl_prepro_customs.jsonl',
+            'seq_num': seq_num,
+        }
+    )
+    customs_documents.append(doc)
+    seq_num += 1
