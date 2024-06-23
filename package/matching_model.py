@@ -21,10 +21,117 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 
 
+# environ setting
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 UPSTAGE_API_KEY = os.environ.get('UPSTAGE_API_KEY')
 LANGCHAIN_API_KEY = os.environ.get('LANGCHAIN_API_KEY')
 os.environ['LANGCHAIN_PROJECT'] = 'matching_model_demo' # 프로젝트명 수정
 LANGCHAIN_PROJECT = os.environ.get('LANGCHAIN_PROJECT')
 
-print(f'LangSmith Project: {LANGCHAIN_PROJECT}')
+print(f'> LangSmith Project: {LANGCHAIN_PROJECT}')
+
+
+# 데이터 전처리
+text = pd.read_excel('../data/비식별된 해외기업별 영문 텍스트데이터.xlsx')
+statis = pd.read_excel('../data/통계청 국제표준산업분류 HSCODE 6단위 매핑.xlsx')
+customs = pd.read_excel('../data/관세청_HS부호_240101.xlsx')
+
+text_copy = text.copy()
+statis_copy = statis.copy()
+customs_copy = customs.copy()
+
+print('> 데이터 로드 완료')
+
+def zero_input(num, x):
+    if pd.isna(x):
+        return np.nan
+    else:
+        cnt = num - len(x)
+        return '0' * cnt + x
+    
+def re_sub(x):
+    if pd.isna(x):
+        return np.nan
+    else:
+        return re.sub(r'^\((.*?)\)$', r'\1', x)
+
+text_copy['ID'] = text_copy['ID'].astype(str)
+text_copy['CODE'] = text_copy['CODE'].astype(str)
+text_copy['CODE'] = text_copy['CODE'].apply(lambda x: zero_input(4, x))
+
+statis_copy.columns = [
+    'ISIC4_CODE', # ISIC4_국제표준산업분류
+    'ISIC4_NAME', # ISIC4_분류명
+    'KSIC10_CODE', # KSIC10_한국표준산업분류
+    'KSIC10_NAME', # KSIC10_분류명
+    'HS2017_CODE', # HS2017_관세통계통합품목분류
+    'HS2017_NAME' # HS2017_분류명
+]
+
+statis_copy['ISIC4_CODE'] = statis_copy['ISIC4_CODE'].astype(str)
+statis_copy['ISIC4_CODE'] = statis_copy['ISIC4_CODE'].replace('nan', np.nan)
+statis_copy['ISIC4_CODE'] = statis_copy['ISIC4_CODE'].str.replace('.0', '', regex=False)
+statis_copy['ISIC4_CODE'] = statis_copy['ISIC4_CODE'].apply(lambda x: zero_input(4, x))
+
+statis_copy['HS2017_CODE'] = statis_copy['HS2017_CODE'].astype(str)
+statis_copy['HS2017_CODE'] = statis_copy['HS2017_CODE'].replace('nan', np.nan)
+statis_copy['HS2017_CODE'] = statis_copy['HS2017_CODE'].str.replace('.0', '', regex=False)
+statis_copy['HS2017_CODE'] = statis_copy['HS2017_CODE'].apply(lambda x: zero_input(6, x))
+
+customs_copy.columns = [
+    'HS_CODE', # HS부호
+    'KOR_NAME', # 한글품목명
+    'ENG_NAME', # 영문품목명
+    'INT_CODE', # 성질통합분류코드
+    'INT_NAME' # 성질통합분류명
+]
+
+customs_copy['HS_CODE'] = customs_copy['HS_CODE'].astype(str)
+customs_copy['HS_CODE'] = customs_copy['HS_CODE'].apply(lambda x: zero_input(10, x))
+
+customs_copy['INT_CODE'] = customs_copy['INT_CODE'].astype(str)
+customs_copy['INT_CODE'] = customs_copy['INT_CODE'].replace('nan', np.nan)
+customs_copy['INT_CODE'] = customs_copy['INT_CODE'].str.replace('.0', '', regex=False)
+
+customs_copy['INT_NAME'] = customs_copy['INT_NAME'].apply(lambda x: re_sub(x))
+
+text_copy = text_copy.fillna(' ')
+statis_copy = statis_copy.fillna(' ')
+customs_copy = customs_copy.fillna(' ')
+
+print('> 데이터 전처리 완료')
+print('> 데이터 결측치 확인')
+print('-----' * 5)
+print(text_copy.isnull().sum())
+print(statis_copy.isnull().sum())
+print(customs_copy.isnull().sum())
+print('-----' * 5)
+
+
+# 데이터 저장 및 로드
+text_copy.to_csv('../data/prepro_text.csv', index=False, encoding='utf-8')
+statis_copy.to_csv('../data/prepro_statis.csv', index=False, encoding='utf-8')
+customs_copy.to_csv('../data/prepro_customs.csv', index=False, encoding='utf-8')
+
+text_prepro = pd.read_csv('../data/prepro_text.csv', dtype=str)
+statis_prepro = pd.read_csv('../data/prepro_statis.csv', dtype=str)
+customs_prepro = pd.read_csv('../data/prepro_customs.csv', dtype=str)
+
+
+# csv to jsonl
+def csv_to_jsonl(csv_file_path, jsonl_file_path):
+    with open(csv_file_path, mode='r', encoding='utf-8') as csv_file:
+        csv_reader = csv.DictReader(csv_file)
+        
+        with open(jsonl_file_path, mode='w', encoding='utf-8') as jsonl_file:
+            for row in csv_reader:
+                jsonl_file.write(json.dumps(row, ensure_ascii=False) + '\n')
+
+csv_to_jsonl('../data/prepro_text.csv', '../data/jsonl_prepro_text.jsonl')
+csv_to_jsonl('../data/prepro_statis.csv', '../data/jsonl_prepro_statis.jsonl')
+csv_to_jsonl('../data/prepro_customs.csv', '../data/jsonl_prepro_customs.jsonl')
+print('> csv to jsonl 완료')
+
+
+# Document 구성
+# text data
