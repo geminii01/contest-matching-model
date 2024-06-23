@@ -214,3 +214,50 @@ for tmp in temp:
     )
     customs_documents.append(doc)
     seq_num += 1
+
+
+# Vector Store - Faiss
+
+# Embedding
+embeddings = UpstageEmbeddings(
+    api_key=UPSTAGE_API_KEY, 
+    model="solar-embedding-1-large"
+)
+
+# statis
+name = 'statis'
+folder_path = f'./faiss_{name}'
+if not os.path.exists(folder_path):
+    print(f'> {name} Vector Store 생성 중')
+    statis_vectorstore = FAISS.from_documents(
+        documents=statis_documents,
+        embedding=embeddings,
+    )
+    statis_vectorstore.save_local(folder_path=folder_path)
+    print(f'> {name} Vector Store 생성 및 로컬 저장 완료')
+else:
+    statis_vectorstore = FAISS.load_local(
+        folder_path=folder_path, 
+        embeddings=embeddings, 
+        allow_dangerous_deserialization=True
+    )
+    print(f'> {name} Vector Store 로컬에서 불러옴')
+
+# customs
+name = 'customs'
+folder_path = f'./faiss_{name}'
+if not os.path.exists(folder_path):
+    print(f'> {name} Vector Store 생성 중')
+    customs_vectorstore = FAISS.from_documents(
+        documents=customs_documents,
+        embedding=embeddings,
+    )
+    customs_vectorstore.save_local(folder_path=folder_path)
+    print(f'> {name} Vector Store 생성 및 로컬 저장 완료')
+else:
+    customs_vectorstore = FAISS.load_local(
+        folder_path=folder_path, 
+        embeddings=embeddings, 
+        allow_dangerous_deserialization=True
+    )
+    print(f'> {name} Vector Store 로컬에서 불러옴')
