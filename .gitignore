@@ -1,4 +1,5 @@
 *.xlsx
 *.csv
 *.json
+*.jsonl
 .env
