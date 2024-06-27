@@ -24,7 +24,7 @@ from langchain_core.output_parsers import StrOutputParser
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 UPSTAGE_API_KEY = os.environ.get('UPSTAGE_API_KEY')
 LANGCHAIN_API_KEY = os.environ.get('LANGCHAIN_API_KEY')
-os.environ['LANGCHAIN_PROJECT'] = 'matching_model_EXP05' # 프로젝트명 수정
+os.environ['LANGCHAIN_PROJECT'] = 'matching_model_rag_test' # 프로젝트명 수정
 LANGCHAIN_PROJECT = os.environ.get('LANGCHAIN_PROJECT')
 
 print(f'> LangSmith Project: {LANGCHAIN_PROJECT}')
@@ -232,7 +232,7 @@ embeddings = OpenAIEmbeddings(
 
 # statis
 name = 'statis'
-folder_path = f'./vectorstore/EXP05/{name}'
+folder_path = f'./vectorstore/rag_test/{name}'
 if not os.path.exists(folder_path):
     print(f'> "{folder_path}" 생성 중')
     statis_vectorstore = FAISS.from_documents(
@@ -251,7 +251,7 @@ else:
 
 # customs
 name = 'customs'
-folder_path = f'./vectorstore/EXP05/{name}'
+folder_path = f'./vectorstore/rag_test/{name}'
 if not os.path.exists(folder_path):
     print(f'> "{folder_path}" 생성 중')
     customs_vectorstore = FAISS.from_documents(
@@ -341,7 +341,7 @@ def eval_rag(eval_filename, output_filename):
             output_lines.write(f'{json.dumps(output, ensure_ascii=False)}\n')
 
 # 평가 데이터에 대해서 결과 생성 - 파일 포맷은 jsonl이지만 파일명은 csv 사용
-eval_rag('../data/jsonl_prepro_text.jsonl', '../submit/EXP05.csv')
+eval_rag('../data/jsonl_prepro_text.jsonl', '../submit/rag_test.csv')
 
 # LangSmith 저장 시간 확보
 time.sleep(60)
