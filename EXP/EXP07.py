@@ -2,14 +2,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-import re
-import csv
 import json
-import numpy as np
 import pandas as pd
 from tqdm import tqdm
-
-from openai import OpenAI
 
 from langchain.schema import Document
 from langchain_community.vectorstores import FAISS
@@ -30,7 +25,7 @@ hs6 = pd.read_csv('../data/HS_6.csv', dtype=str, encoding='utf-8')
 hs8 = pd.read_csv('../data/HS_8.csv', dtype=str, encoding='utf-8')
 hs10 = pd.read_csv('../data/HS_10.csv', dtype=str, encoding='utf-8')
 
-print('> Data Load')
+# print('> Data Load')
 
 
 # Create HSCODE Documents
@@ -46,75 +41,63 @@ hs8['HS_8_'] = hs8['HS_4'] + hs8['HS_6'] + hs8['HS_8']
 hs10['HS_10_'] = hs10['HS_4'] + hs10['HS_6'] + hs10['HS_10']
 
 seq_num = 1
-documents = []
+hscode_documents = []
 for idx in tqdm(range(hs10.shape[0]), desc='Create HSCODE Documents'):
     a = hs10.loc[idx, 'KOR']
     b = hs10.loc[idx, 'ENG']
     c = get_unique_value(hs2, idx, 'HS_2', 'HS_10_', 'BU', 2)
     d = get_unique_value(hs2, idx, 'HS_2', 'HS_10_', 'RYU', 2)
     e = get_unique_value(hs4, idx, 'HS_4', 'HS_10_', 'KOR', 4)
-    f = get_unique_value(hs4, idx, 'HS_4', 'HS_10_', 'ENG', 4)
+    # f = get_unique_value(hs4, idx, 'HS_4', 'HS_10_', 'ENG', 4)
     g = get_unique_value(hs5, idx, 'HS_5_', 'HS_10_', 'KOR', 5)
-    h = get_unique_value(hs5, idx, 'HS_5_', 'HS_10_', 'ENG', 5)
+    # h = get_unique_value(hs5, idx, 'HS_5_', 'HS_10_', 'ENG', 5)
     i = get_unique_value(hs6, idx, 'HS_6_', 'HS_10_', 'KOR', 6)
-    j = get_unique_value(hs6, idx, 'HS_6_', 'HS_10_', 'ENG', 6)
+    # j = get_unique_value(hs6, idx, 'HS_6_', 'HS_10_', 'ENG', 6)
     k = get_unique_value(hs8, idx, 'HS_8_', 'HS_10_', 'KOR', 8)
-    l = get_unique_value(hs8, idx, 'HS_8_', 'HS_10_', 'ENG', 8)
+    # l = get_unique_value(hs8, idx, 'HS_8_', 'HS_10_', 'ENG', 8)
 
     doc = Document(
-        page_content=f'[품명]\n- {a} ({b})\n\n[부 해설서]\n- {c}\n\n[류 해설서]\n- {d}\n\n[호 해설서]\n- {e} ({f})\n\n[추가 해설서]\n- {g} ({h})\n- {i} ({j})\n- {k} ({l})',
+        page_content=f'[품명]\n- {a} ({b})\n\n[부 해설서]\n- {c}\n\n[류 해설서]\n- {d}\n\n[호 해설서]\n- {e}\n\n[추가 해설서]\n- {g}\n- {i}\n- {k}',
         metadata={
             'HSCODE': hs10.loc[idx, 'HS_10_'],
             'seq_num': seq_num
         }
     )
-    documents.append(doc)
+    hscode_documents.append(doc)
     seq_num += 1
-print(documents[0].page_content)
-print(documents[0].metadata)
+print(hscode_documents[0].page_content)
+print(hscode_documents[0].metadata)
 
 
 # 요약과 번역을 각각의 컬럼으로 분리
 text_dup = text_prepro.drop_duplicates(subset='DSC').reset_index(drop=True)
-text_dup_sum_enko = text_dup.copy()
+text_dup_copy = text_dup.copy()
 
 data = []
-file_path = '../data/jsonl_summary_text_EXP06.jsonl'
+file_path = '../data/jsonl_summary_text_EXP08_2.jsonl'
 with open(file_path, 'r', encoding='utf-8') as f:
     for line in f:
         data.append(json.loads(line.strip()))
+text_kor = pd.DataFrame(data)
+text_dup_copy['DSC_kor'] = text_kor['DSC']
 
-df = pd.DataFrame(data)
-cond = df['DSC'].apply(lambda x: x.split('\n\nKorean: '))
-for idx in range(len(cond)):
-    text_dup_sum_enko.loc[idx, 'DSC_summary'] = cond[idx][0].strip('Summary: ')
-    text_dup_sum_enko.loc[idx, 'DSC_enko'] = cond[idx][1]
 
-# drop_duplicates를 적용한 데이터를 활용하였으므로, 각 요약과 번역을 원래의 row 길이에 맞게 설정
-text_sum_enko = text_prepro.copy()
-for i in tqdm(iterable=range(text_sum_enko.shape[0]), desc='Reconstruction ENG Text'):
-    for j in range(text_dup_sum_enko.shape[0]):
-        if text_sum_enko.loc[i, 'DSC'] == text_dup_sum_enko.loc[j, 'DSC']:
-            text_sum_enko.loc[i, 'DSC_summary'] = text_dup_sum_enko.loc[j, 'DSC_summary']
-            text_sum_enko.loc[i, 'DSC_enko'] = text_dup_sum_enko.loc[j, 'DSC_enko']
-
-        
-# Document 재구성 - text
+# Create Text Documents
 seq_num = 1
 text_documents = []
-for idx in range(text_sum_enko.shape[0]):
+for idx in tqdm(range(text_dup_copy.shape[0]), desc='Create Text Documents'):
     doc = Document(
-        page_content=f"{text_sum_enko.loc[idx, 'DSC_summary']}\n{text_sum_enko.loc[idx, 'DSC_enko']}", 
+        page_content=text_dup_copy.loc[idx, 'DSC_kor'], 
         metadata={
-            'ID': text_sum_enko.loc[idx, 'ID'],
-            'CODE': text_sum_enko.loc[idx, 'CODE'],
-            'source': '/root/contest-matching-model/data/jsonl_summary_text.jsonl',
+            'ID': text_dup_copy.loc[idx, 'ID'],
+            'CODE': text_dup_copy.loc[idx, 'CODE'],
+            'DSC': text_dup_copy.loc[idx, 'DSC'],
+            'source': '/root/contest-matching-model/data/jsonl_summary_text_EXP08_2.jsonl',
             'seq_num': seq_num,
         }
     )
     text_documents.append(doc)
     seq_num += 1
-print('> Create ENG Text Documents')
 
 
 # Text Splitter 생략
@@ -128,11 +111,11 @@ embeddings = OpenAIEmbeddings(
 
 
 # Vector Store 생성
-folder_path = f'./vectorstore/EXP07'
+folder_path = f'./vectorstore/EXP07_2'
 if not os.path.exists(folder_path):
     print(f'> "{folder_path}" ...')
     vectorstore = FAISS.from_documents(
-        documents=documents,
+        documents=hscode_documents,
         embedding=embeddings,
     )
     vectorstore.save_local(folder_path=folder_path)
@@ -150,7 +133,7 @@ else:
 retriever = vectorstore.as_retriever(
     search_type='mmr', 
     search_kwargs={
-        'k': 5, 
+        'k': 4, 
         'fetch_k': 100,
         'lambda_mult': 0.95
     }
@@ -158,30 +141,54 @@ retriever = vectorstore.as_retriever(
 
 
 # Create directory
-file_path = '../submit/EXP07/hscode.jsonl'
+file_path = '../submit/EXP07/temp_1718.jsonl'
 os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
 
 # Information Retrieval
-for text_document in tqdm(iterable=text_documents, desc='Information Retrieval'):
-    # query
-    query = text_document.page_content
+with open(file_path, 'w', encoding='utf-8') as ref:
+    for text_document in tqdm(iterable=text_documents, desc='Information Retrieval'):
+        # query
+        query = text_document.page_content
 
-    # retriever
-    results = retriever.invoke(query)
+        # retriever
+        outputs = retriever.invoke(query)
 
-    # Save References and Create new query
-    with open(file_path, 'a', encoding='utf-8') as ref:
-        references = {
-            "HSCODE": "", 
+        # Save References and Create new query
+        results = {
+            "HSCODE": "",
+            "DSC_kor": "",
+            "DSC": "",
             "seq_num": "",
-            "result": ""
+            "references": ""
         }
-        ref_0 = [reference.metadata['HSCODE'] for reference in results]
-        ref_1 = [reference.metadata['seq_num'] for reference in results]
-        ref_2 = [reference.page_content for reference in results]
-        references['HSCODE'] = ref_0
-        references['seq_num'] = ref_1
-        references['result'] = ref_2
+        res_0 = [output.metadata['HSCODE'] for output in outputs]
+        res_1 = query
+        res_2 = text_document.metadata['DSC']
+        res_3 = [output.metadata['seq_num'] for output in outputs]
+        res_4 = [output.page_content for output in outputs]
+        results['HSCODE'] = res_0
+        results['DSC_kor'] = res_1
+        results['DSC'] = res_2
+        results['seq_num'] = res_3
+        results['references'] = res_4
 
-        ref.write(f'{json.dumps(references, ensure_ascii=False)}\n')
+        ref.write(f'{json.dumps(results, ensure_ascii=False)}\n')
+
+
+# drop_duplicates를 적용한 데이터를 활용하였으므로, 각 요약과 번역을 원래의 row 길이에 맞게 설정
+text_prepro_copy = text_prepro.copy()
+
+data = []
+with open(file_path, 'r', encoding='utf-8') as f:
+    for line in f:
+        data.append(json.loads(line.strip()))
+temp_1718 = pd.DataFrame(data)
+
+for i in tqdm(range(text_prepro_copy.shape[0]), desc='Reconstruction Text'):
+    for j in range(temp_1718.shape[0]):
+        if text_prepro_copy.loc[i, 'DSC'] == temp_1718.loc[j, 'DSC']:
+            text_prepro_copy.loc[i, 'DSC_kor'] = temp_1718.loc[j, 'DSC_kor']
+            text_prepro_copy.loc[i, 'HSCODE'] = ', '.join(temp_1718.loc[j, 'HSCODE'])
+
+text_prepro_copy.to_csv('../submit/EXP07/hscode_2.csv', index=False, encoding='utf-8')
