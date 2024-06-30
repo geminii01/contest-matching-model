@@ -2,262 +2,197 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-import re
-import csv
 import json
-import time
-import numpy as np
 import pandas as pd
-from pprint import pprint
+from tqdm import tqdm
 
-from langchain import hub
-# from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import JSONLoader
 from langchain.schema import Document
 from langchain_community.vectorstores import FAISS
-from langchain_upstage import UpstageEmbeddings
-from langchain_upstage import ChatUpstage
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import OpenAIEmbeddings
 
 
-# environ setting
+# env setting
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
-UPSTAGE_API_KEY = os.environ.get('UPSTAGE_API_KEY')
-LANGCHAIN_API_KEY = os.environ.get('LANGCHAIN_API_KEY')
-os.environ['LANGCHAIN_PROJECT'] = 'matching_model_demo' # 프로젝트명 수정
-LANGCHAIN_PROJECT = os.environ.get('LANGCHAIN_PROJECT')
-
-print(f'> LangSmith Project: {LANGCHAIN_PROJECT}')
+OPENAI_ORG_KEY = os.environ.get('OPENAI_ORG_KEY')
 
 
-# 데이터 전처리
-text = pd.read_excel('../data/비식별된 해외기업별 영문 텍스트데이터.xlsx')
-statis = pd.read_excel('../data/통계청 국제표준산업분류 HSCODE 6단위 매핑.xlsx')
-customs = pd.read_excel('../data/관세청_HS부호_240101.xlsx')
-
-text_copy = text.copy()
-statis_copy = statis.copy()
-customs_copy = customs.copy()
-
-def zero_input(num, x):
-    if pd.isna(x):
-        return np.nan
-    else:
-        cnt = num - len(x)
-        return '0' * cnt + x
-    
-def re_sub(x):
-    if pd.isna(x):
-        return np.nan
-    else:
-        return re.sub(r'^\((.*?)\)$', r'\1', x)
-
-text_copy['ID'] = text_copy['ID'].astype(str)
-text_copy['CODE'] = text_copy['CODE'].astype(str)
-text_copy['CODE'] = text_copy['CODE'].apply(lambda x: zero_input(4, x))
-
-statis_copy.columns = [
-    'ISIC4_CODE', # ISIC4_국제표준산업분류
-    'ISIC4_NAME', # ISIC4_분류명
-    'KSIC10_CODE', # KSIC10_한국표준산업분류
-    'KSIC10_NAME', # KSIC10_분류명
-    'HS2017_CODE', # HS2017_관세통계통합품목분류
-    'HS2017_NAME' # HS2017_분류명
-]
-
-statis_copy['ISIC4_CODE'] = statis_copy['ISIC4_CODE'].astype(str)
-statis_copy['ISIC4_CODE'] = statis_copy['ISIC4_CODE'].replace('nan', np.nan)
-statis_copy['ISIC4_CODE'] = statis_copy['ISIC4_CODE'].str.replace('.0', '', regex=False)
-statis_copy['ISIC4_CODE'] = statis_copy['ISIC4_CODE'].apply(lambda x: zero_input(4, x))
-
-statis_copy['HS2017_CODE'] = statis_copy['HS2017_CODE'].astype(str)
-statis_copy['HS2017_CODE'] = statis_copy['HS2017_CODE'].replace('nan', np.nan)
-statis_copy['HS2017_CODE'] = statis_copy['HS2017_CODE'].str.replace('.0', '', regex=False)
-statis_copy['HS2017_CODE'] = statis_copy['HS2017_CODE'].apply(lambda x: zero_input(6, x))
-
-customs_copy.columns = [
-    'HS_CODE', # HS부호
-    'KOR_NAME', # 한글품목명
-    'ENG_NAME', # 영문품목명
-    'INT_CODE', # 성질통합분류코드
-    'INT_NAME' # 성질통합분류명
-]
-
-customs_copy['HS_CODE'] = customs_copy['HS_CODE'].astype(str)
-customs_copy['HS_CODE'] = customs_copy['HS_CODE'].apply(lambda x: zero_input(10, x))
-
-customs_copy['INT_CODE'] = customs_copy['INT_CODE'].astype(str)
-customs_copy['INT_CODE'] = customs_copy['INT_CODE'].replace('nan', np.nan)
-customs_copy['INT_CODE'] = customs_copy['INT_CODE'].str.replace('.0', '', regex=False)
-
-customs_copy['INT_NAME'] = customs_copy['INT_NAME'].apply(lambda x: re_sub(x))
-
-text_copy = text_copy.fillna(' ')
-statis_copy = statis_copy.fillna(' ')
-customs_copy = customs_copy.fillna(' ')
-
-print('> 데이터 전처리 완료')
-print('> 데이터 결측치 확인')
-print('-----' * 5)
-print(text_copy.isnull().sum())
-print(statis_copy.isnull().sum())
-print(customs_copy.isnull().sum())
-print('-----' * 5)
+# 데이터 로드
+text_prepro = pd.read_csv('./data/prepro_text.csv', dtype=str)
+hs2 = pd.read_csv('./data/HS_2.csv', dtype=str, encoding='utf-8')
+hs4 = pd.read_csv('./data/HS_4.csv', dtype=str, encoding='utf-8')
+hs5 = pd.read_csv('./data/HS_5.csv', dtype=str, encoding='utf-8')
+hs6 = pd.read_csv('./data/HS_6.csv', dtype=str, encoding='utf-8')
+hs8 = pd.read_csv('./data/HS_8.csv', dtype=str, encoding='utf-8')
+hs10 = pd.read_csv('./data/HS_10.csv', dtype=str, encoding='utf-8')
 
 
-# 데이터 저장 및 로드
-text_copy.to_csv('../data/prepro_text.csv', index=False, encoding='utf-8')
-statis_copy.to_csv('../data/prepro_statis.csv', index=False, encoding='utf-8')
-customs_copy.to_csv('../data/prepro_customs.csv', index=False, encoding='utf-8')
+# Create HSCODE Documents
+def get_unique_value(df_0, idx, col_0, col_1, col_2, num):
+    val = df_0[df_0[col_0] == hs10.loc[idx, col_1][:num]][col_2].unique()
+    if len(val) == 1:
+        return val[0]
+    return ''
 
-text_prepro = pd.read_csv('../data/prepro_text.csv', dtype=str)
-statis_prepro = pd.read_csv('../data/prepro_statis.csv', dtype=str)
-customs_prepro = pd.read_csv('../data/prepro_customs.csv', dtype=str)
-
-
-# csv to jsonl
-def csv_to_jsonl(csv_file_path, jsonl_file_path):
-    with open(csv_file_path, mode='r', encoding='utf-8') as csv_file:
-        csv_reader = csv.DictReader(csv_file)
-        
-        with open(jsonl_file_path, mode='w', encoding='utf-8') as jsonl_file:
-            for row in csv_reader:
-                jsonl_file.write(json.dumps(row, ensure_ascii=False) + '\n')
-
-csv_to_jsonl('../data/prepro_text.csv', '../data/jsonl_prepro_text.jsonl')
-csv_to_jsonl('../data/prepro_statis.csv', '../data/jsonl_prepro_statis.jsonl')
-csv_to_jsonl('../data/prepro_customs.csv', '../data/jsonl_prepro_customs.jsonl')
-print('> csv to jsonl 완료')
-
-
-# Document 구성
-
-# text data
-file_path = '../data/jsonl_prepro_text.jsonl'
-
-loader = JSONLoader(
-    file_path=file_path,
-    jq_schema='.',
-    text_content=False,
-    json_lines=True,
-)
-temp = loader.load()
+hs5['HS_5_'] = hs5['HS_4'] + hs5['HS_5']
+hs6['HS_6_'] = hs6['HS_4'] + hs6['HS_6']
+hs8['HS_8_'] = hs8['HS_4'] + hs8['HS_6'] + hs8['HS_8']
+hs10['HS_10_'] = hs10['HS_4'] + hs10['HS_6'] + hs10['HS_10']
 
 seq_num = 1
-text_documents = []
-for tmp in temp:
-    data = json.loads(tmp.page_content)
+hscode_documents = []
+for idx in tqdm(range(hs10.shape[0]), desc='Create HSCODE Documents'):
+    a = hs10.loc[idx, 'KOR']
+    b = hs10.loc[idx, 'ENG']
+    c = get_unique_value(hs2, idx, 'HS_2', 'HS_10_', 'BU', 2)
+    d = get_unique_value(hs2, idx, 'HS_2', 'HS_10_', 'RYU', 2)
+    e = get_unique_value(hs4, idx, 'HS_4', 'HS_10_', 'KOR', 4)
+    # f = get_unique_value(hs4, idx, 'HS_4', 'HS_10_', 'ENG', 4)
+    g = get_unique_value(hs5, idx, 'HS_5_', 'HS_10_', 'KOR', 5)
+    # h = get_unique_value(hs5, idx, 'HS_5_', 'HS_10_', 'ENG', 5)
+    i = get_unique_value(hs6, idx, 'HS_6_', 'HS_10_', 'KOR', 6)
+    # j = get_unique_value(hs6, idx, 'HS_6_', 'HS_10_', 'ENG', 6)
+    k = get_unique_value(hs8, idx, 'HS_8_', 'HS_10_', 'KOR', 8)
+    # l = get_unique_value(hs8, idx, 'HS_8_', 'HS_10_', 'ENG', 8)
+
     doc = Document(
-        page_content=data['DSC'], 
+        page_content=f'[품명]\n- {a} ({b})\n\n[부 해설서]\n- {c}\n\n[류 해설서]\n- {d}\n\n[호 해설서]\n- {e}\n\n[추가 해설서]\n- {g}\n- {i}\n- {k}',
         metadata={
-            'ID': data['ID'],
-            'CODE': data['CODE'],
-            'source': '/root/contest-matching-model/data/jsonl_prepro_text.jsonl',
+            'HSCODE': hs10.loc[idx, 'HS_10_'],
+            'seq_num': seq_num
+        }
+    )
+    hscode_documents.append(doc)
+    seq_num += 1
+print(hscode_documents[0].page_content)
+print(hscode_documents[0].metadata)
+
+
+# 요약과 번역을 각각의 컬럼으로 분리
+text_dup = text_prepro.drop_duplicates(subset='DSC').reset_index(drop=True)
+text_dup_copy = text_dup.copy()
+
+data = []
+file_path = './data/enko_text.jsonl'
+with open(file_path, 'r', encoding='utf-8') as f:
+    for line in f:
+        data.append(json.loads(line.strip()))
+text_kor = pd.DataFrame(data)
+text_dup_copy['DSC_kor'] = text_kor['DSC']
+
+
+# Create Text Documents
+seq_num = 1
+text_documents = []
+for idx in tqdm(range(text_dup_copy.shape[0]), desc='Create Text Documents'):
+    doc = Document(
+        page_content=text_dup_copy.loc[idx, 'DSC_kor'], 
+        metadata={
+            'ID': text_dup_copy.loc[idx, 'ID'],
+            'CODE': text_dup_copy.loc[idx, 'CODE'],
+            'DSC': text_dup_copy.loc[idx, 'DSC'],
+            'source': file_path,
             'seq_num': seq_num,
         }
     )
     text_documents.append(doc)
     seq_num += 1
-
-# statis data
-file_path = '../data/jsonl_prepro_statis.jsonl'
-
-loader = JSONLoader(
-    file_path=file_path,
-    jq_schema='.',
-    text_content=False,
-    json_lines=True,
-)
-temp = loader.load()
-
-seq_num = 1
-statis_documents = []
-for tmp in temp:
-    data = json.loads(tmp.page_content)
-    doc = Document(
-        page_content=f"{data['ISIC4_NAME']}\r\n{data['KSIC10_NAME']}\r\n{data['HS2017_NAME']}", # ISIC4, KSIC10, HS2017 순으로 작성됨
-        metadata={
-            'ISIC4_CODE': data['ISIC4_CODE'],
-            'KSIC10_CODE': data['KSIC10_CODE'],
-            'HS2017_CODE': data['HS2017_CODE'],
-            'source': '/root/contest-matching-model/data/jsonl_prepro_statis.jsonl',
-            'seq_num': seq_num,
-        }
-    )
-    statis_documents.append(doc)
-    seq_num += 1
-
-# customs
-file_path = '../data/jsonl_prepro_customs.jsonl'
-
-loader = JSONLoader(
-    file_path=file_path,
-    jq_schema='.',
-    text_content=False,
-    json_lines=True,
-)
-temp = loader.load()
-
-seq_num = 1
-customs_documents = []
-for tmp in temp:
-    data = json.loads(tmp.page_content)
-    doc = Document(
-        page_content=f"{data['KOR_NAME']}\r\n{data['ENG_NAME']}\r\n{data['INT_NAME']}", # 한글품목명, 영어품목명, 성질 통합 분류명 순으로 작성됨
-        metadata={
-            'HS_CODE': data['HS_CODE'],
-            'INT_CODE': data['INT_CODE'],
-            'source': '/root/contest-matching-model/data/jsonl_prepro_customs.jsonl',
-            'seq_num': seq_num,
-        }
-    )
-    customs_documents.append(doc)
-    seq_num += 1
+print(text_documents[0].page_content)
 
 
-# Vector Store - Faiss
+# Text Splitter 생략
+
 
 # Embedding
-embeddings = UpstageEmbeddings(
-    api_key=UPSTAGE_API_KEY, 
-    model="solar-embedding-1-large"
+embeddings = OpenAIEmbeddings(
+    api_key=OPENAI_API_KEY,
+    model='text-embedding-3-large'
 )
 
-# statis
-name = 'statis'
-folder_path = f'./faiss_{name}'
-if not os.path.exists(folder_path):
-    print(f'> {name} Vector Store 생성 중')
-    statis_vectorstore = FAISS.from_documents(
-        documents=statis_documents,
-        embedding=embeddings,
-    )
-    statis_vectorstore.save_local(folder_path=folder_path)
-    print(f'> {name} Vector Store 생성 및 로컬 저장 완료')
-else:
-    statis_vectorstore = FAISS.load_local(
-        folder_path=folder_path, 
-        embeddings=embeddings, 
-        allow_dangerous_deserialization=True
-    )
-    print(f'> {name} Vector Store 로컬에서 불러옴')
 
-# customs
-name = 'customs'
-folder_path = f'./faiss_{name}'
+# Vector Store 생성
+folder_path = f'./vectorstore/text-embedding-3-large'
 if not os.path.exists(folder_path):
-    print(f'> {name} Vector Store 생성 중')
-    customs_vectorstore = FAISS.from_documents(
-        documents=customs_documents,
+    print(f'> "{folder_path}" ...')
+    vectorstore = FAISS.from_documents(
+        documents=hscode_documents,
         embedding=embeddings,
     )
-    customs_vectorstore.save_local(folder_path=folder_path)
-    print(f'> {name} Vector Store 생성 및 로컬 저장 완료')
+    vectorstore.save_local(folder_path=folder_path)
+    print(f'> Create and Save "{folder_path}"')
 else:
-    customs_vectorstore = FAISS.load_local(
+    vectorstore = FAISS.load_local(
         folder_path=folder_path, 
         embeddings=embeddings, 
         allow_dangerous_deserialization=True
     )
-    print(f'> {name} Vector Store 로컬에서 불러옴')
+    print(f'> "{folder_path}" already exists.')
+
+
+# vectorstore as retriever
+retriever = vectorstore.as_retriever(
+    search_type='mmr', 
+    search_kwargs={
+        'k': 4, 
+        'fetch_k': 100,
+        'lambda_mult': 0.95
+    }
+)
+
+
+# Information Retrieval
+file_path = './submit/temp_1718.jsonl'
+if os.path.exists(file_path):
+    print(f'> "{file_path}" already exists.')
+else:
+    with open(file_path, 'w', encoding='utf-8') as ref:
+        for text_document in tqdm(iterable=text_documents, desc='Information Retrieval'):
+            # query
+            query = text_document.page_content
+
+            # retriever
+            outputs = retriever.invoke(query)
+
+            # Save References and Create new query
+            results = {
+                "HSCODE": "",
+                "DSC_kor": "",
+                "DSC": "",
+                "seq_num": "",
+                "references": ""
+            }
+            res_0 = [output.metadata['HSCODE'] for output in outputs]
+            res_1 = query
+            res_2 = text_document.metadata['DSC']
+            res_3 = [output.metadata['seq_num'] for output in outputs]
+            res_4 = [output.page_content for output in outputs]
+            results['HSCODE'] = res_0
+            results['DSC_kor'] = res_1
+            results['DSC'] = res_2
+            results['seq_num'] = res_3
+            results['references'] = res_4
+
+            ref.write(f'{json.dumps(results, ensure_ascii=False)}\n')
+
+
+# drop_duplicates를 적용한 데이터를 활용하였으므로, 각 요약과 번역을 원래의 row 길이에 맞게 설정
+text_prepro_copy = text_prepro.copy()
+
+file_path = './submit/hscode.csv'
+if os.path.exists(file_path):
+    print(f'> "{file_path}" already exists.')
+else:
+    data = []
+    with open('./submit/temp_1718.jsonl', 'r', encoding='utf-8') as f:
+        for line in f:
+            data.append(json.loads(line.strip()))
+    temp_1718 = pd.DataFrame(data)
+
+    for i in tqdm(range(text_prepro_copy.shape[0]), desc='Reconstruction Text'):
+        for j in range(temp_1718.shape[0]):
+            if text_prepro_copy.loc[i, 'DSC'] == temp_1718.loc[j, 'DSC']:
+                text_prepro_copy.loc[i, 'DSC_kor'] = temp_1718.loc[j, 'DSC_kor']
+                text_prepro_copy.loc[i, 'HSCODE'] = ', '.join(temp_1718.loc[j, 'HSCODE'])
+
+    text_prepro_copy.to_csv('./submit/hscode.csv', index=False, encoding='utf-8')
+
+print('> done.')
