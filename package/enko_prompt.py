@@ -8,6 +8,7 @@ import pandas as pd
 from openai import OpenAI
 
 
+# .env_sample 파일을 .env로 변경하고, 파일 내에 OpenAI API Key를 입력
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
 
@@ -57,7 +58,7 @@ def get_response(text, max_retries=3):
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-text_prepro = pd.read_csv('./data/prepro_text.csv', dtype=str)
+text_prepro = pd.read_csv('./data/비식별된 해외기업별 영문 텍스트데이터 2.csv', dtype=str)
 text_dup = text_prepro.drop_duplicates(subset='DSC').reset_index(drop=True)
 
 print('-----' * 15)

@@ -1,10 +1,4 @@
-from dotenv import load_dotenv
-load_dotenv()
-
 import os
-import csv
-import json
-import numpy as np
 import pandas as pd
 
 
@@ -12,46 +6,33 @@ file_path = './data'
 os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
 
-# # 영문 텍스트 데이터 (원시) 전처리
-text = pd.read_excel('./data/비식별된 해외기업별 영문 텍스트데이터.xlsx')
-text_copy = text.copy()
+# # 해외 기업 설명 데이터와 통계청 데이터의 ICIS4 기준으로 HS부호 6자리 매칭
+text_data = pd.read_excel('./data/비식별된 해외기업별 영문 텍스트데이터.xlsx', dtype=str)
+statis_data = pd.read_excel('./data/통계청 국제표준산업분류 HSCODE 6단위 매핑.xlsx', dtype=str)
+dup_text_data = text_data.drop_duplicates(subset='CODE').reset_index(drop=True)
 
-def zero_input(num, x):
-    if pd.isna(x):
-        return np.nan
+temp = []
+for i in range(dup_text_data.shape[0]):
+    isic4_code = dup_text_data.loc[i, 'CODE']
+    cond_df = statis_data[statis_data.iloc[:, 0] == isic4_code].dropna()
+    if not cond_df.empty:
+        temp.append(cond_df.iloc[:, 4].unique().tolist())
     else:
-        cnt = num - len(x)
-        return '0' * cnt + x
+        temp.append([])
 
-def csv_to_jsonl(csv_file_path, jsonl_file_path):
-    with open(csv_file_path, mode='r', encoding='utf-8') as csv_file:
-        csv_reader = csv.DictReader(csv_file)
-        
-        with open(jsonl_file_path, mode='w', encoding='utf-8') as jsonl_file:
-            for row in csv_reader:
-                jsonl_file.write(json.dumps(row, ensure_ascii=False) + '\n')
+for i in range(dup_text_data.shape[0]):
+    dup_text_data.loc[i, 'HS_6'] = ', '.join(temp[i])
 
+text_data['HS_6'] = ''
+for i in range(dup_text_data.shape[0]):
+    code = dup_text_data.loc[i, 'CODE']
+    hs2017 = dup_text_data.loc[i, 'HS_6']
+    text_data.loc[text_data['CODE'] == code, 'HS_6'] = hs2017
 
-file_path = './data/prepro_text.csv'
+file_path = './data/비식별된 해외기업별 영문 텍스트데이터 2.csv'
+text_data.to_csv(file_path, index=False)
 
-if os.path.exists(file_path):
-    text_prepro = pd.read_csv(file_path, dtype=str)
-    print(f'> "{file_path}" already exists.')
-    print('-----' * 5)
-    print(text_prepro.isnull().sum())
-    print('-----' * 5)
-else:
-    text_copy['ID'] = text_copy['ID'].astype(str)
-    text_copy['CODE'] = text_copy['CODE'].astype(str)
-    text_copy['CODE'] = text_copy['CODE'].apply(lambda x: zero_input(4, x))
-    text_copy = text_copy.fillna(' ')
-
-    print('> Complete preprocessing: Eng Text')
-    print('-----' * 5)
-    print(text_copy.isnull().sum())
-    print('-----' * 5)
-
-    text_copy.to_csv(file_path, index=False, encoding='utf-8')
+print(f'> "{file_path}" already exists.')
 
 
 # # 부류 목록 직접 수집 (관세율표-부류목록)
@@ -260,7 +241,6 @@ for df in dfs:
         for idx in range(df.shape[0]):
             if df.loc[idx, lan][-1] == ':':
                 df.loc[idx, lan] = df.loc[idx, lan].rstrip(':').strip()
-print('> Complete preprocessing: Crawling data')
 
 def save_csv(df, file_path):
     if os.path.exists(file_path):
