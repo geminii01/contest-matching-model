@@ -30,9 +30,10 @@ for i in range(dup_text_data.shape[0]):
     text_data.loc[text_data['CODE'] == code, 'HS_6'] = hs2017
 
 file_path = './data/비식별된 해외기업별 영문 텍스트데이터 2.csv'
-text_data.to_csv(file_path, index=False)
-
-print(f'> "{file_path}" already exists.')
+if os.path.exists(file_path):
+    print(f'> "{file_path}" already exists.')
+else:
+    text_data.to_csv(file_path, index=False)
 
 
 # # 부류 목록 직접 수집 (관세율표-부류목록)

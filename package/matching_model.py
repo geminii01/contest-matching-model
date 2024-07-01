@@ -139,12 +139,8 @@ else:
 
 # vectorstore as retriever
 retriever = vectorstore.as_retriever(
-    search_type='mmr', 
-    search_kwargs={
-        'k': 30, 
-        'fetch_k': 1000,
-        'lambda_mult': 0.95
-    }
+    search_type='similarity', 
+    search_kwargs={'k': 30}
 )
 
 
