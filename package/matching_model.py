@@ -224,9 +224,11 @@ else:
 
 
 # 제출 파일에 맞게 csv file 수정
-final_results = pd.read_csv(file_path, dtype=str)
-
 file_path = './submit/final_results.csv'
-final_results[['ID', 'HSK']].to_csv(file_path, index=False)
+if os.path.exists(file_path):
+    print(f'> "{file_path}" already exists.')
+else:
+    final_results = pd.read_csv('./submit/hsk_filtered.csv', dtype=str)
+    final_results[['ID', 'HSK']].to_csv(file_path, index=False)
 
 print('> done.')
