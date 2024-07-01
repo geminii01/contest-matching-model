@@ -222,4 +222,11 @@ else:
 
     text_copy.to_csv(file_path, index=False, encoding='utf-8')
 
+
+# 제출 파일에 맞게 csv file 수정
+final_results = pd.read_csv(file_path, dtype=str)
+
+file_path = './submit/final_results.csv'
+final_results[['ID', 'HSK']].to_csv(file_path, index=False)
+
 print('> done.')
